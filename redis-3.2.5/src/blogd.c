@@ -386,27 +386,53 @@ void responseHttpFile(void *cl, char **matches, int readlen, size_t qblen) {
     filePath = stringConcat(filePath, ".");
     filePath = stringConcat(filePath, matches[1]);
 
-    unsigned char buffer[PROTO_REPLY_CHUNK_BYTES];
     client *c = (client*) cl;
 
     int fileFd = open(filePath, O_RDONLY);
+    unsigned char buffer[PROTO_REPLY_CHUNK_BYTES];
     long ret;
 
     if (fileFd == -1) {
         responseHttpError(c, readlen, qblen, 404);
     } else {
-        char *content = buildHttpHeaders(NULL, matches[1], 200, 1);
+        char *content = buildHttpHeaders("", matches[1], 200, 1);
 
-        write(c->fd, content, strlen(content));
+        //write(c->fd, content, strlen(content));
 
-        while ((ret = read(fileFd, buffer, PROTO_REPLY_CHUNK_BYTES)) > 0 ) {
-            write(c->fd, buffer, ret);
+        while (1) {
+            // Read data into buffer.  We may not have enough to fill up buffer, so we
+            // store how many bytes were actually read in bytes_read.
+            int bytes_read = read(fileFd, buffer, sizeof(buffer));
+            if (bytes_read == 0) // We're done reading from the file
+                break;
+
+            if (bytes_read < 0) {
+                // handle errors
+            }
+
+            // You need a loop for the write, because not all of the data may be written
+            // in one call; write will return how many bytes were written. p keeps
+            // track of where in the buffer we are, while we decrement bytes_read
+            // to keep track of how many bytes are left to write.
+            void *p = buffer;
+            while (bytes_read > 0) {
+                int bytes_written = send(c->fd, p, bytes_read, 0);
+                if (bytes_written <= 0) {
+                    // handle errors
+                }
+                bytes_read -= bytes_written;
+                p += bytes_written;
+            }
         }
 
-        close(fileFd);
+        /*while (ret = read(fileFd, buffer, PROTO_REPLY_CHUNK_BYTES)) {
+            write(c->fd, buffer, ret);
+        }*/
+
+        //close(fileFd);
     }
 
-    freeClientAsync(c);
+    //freeClient(c);
 }
 
 char *buildHttpHeaders(char *content, char *contentType, unsigned int code, unsigned int isChunk) {
@@ -553,7 +579,7 @@ void processHttpRequestFromClient(aeEventLoop *el, int fd, void *privdata, int m
     h3_request_header_parse(header, httpRequestBuff, httpRequestLength);
 
     if (strncmp(header->RequestMethod, "GET ", 4) && strncmp(header->RequestMethod, "get ", 4)) {
-        responseHttp(c, NULL, "", 400, 0);
+        responseHttp(c, "", "", 400, 0);
         return;
     }
 
@@ -562,7 +588,7 @@ void processHttpRequestFromClient(aeEventLoop *el, int fd, void *privdata, int m
 
     // Parse url
     if (http_parser_parse_url(fullUrl, strlen(fullUrl), 0, &u)) {
-        responseHttp(c, NULL, "", 400, 0);
+        responseHttp(c, "", "", 400, 0);
         return;
     }
 
