@@ -604,7 +604,7 @@ void processHttpRequestFromClient(aeEventLoop *el, int fd, void *privdata, int m
 
     int numRoutes = sizeof(httpRoutes) / sizeof(struct httpRoute);
     unsigned int i;
-    bool isMatched = false;
+    unsigned int isMatched = 0;
 
     // Find matched route
     for (i = 0; i < numRoutes; i++) {
@@ -612,7 +612,7 @@ void processHttpRequestFromClient(aeEventLoop *el, int fd, void *privdata, int m
         char **matches = preg_match(r->pattern, urlPath);
 
         if (matches) {
-            isMatched = true;
+            isMatched = 1;
             r->callback(c, matches, readlen, qblen);
             break;
         }
