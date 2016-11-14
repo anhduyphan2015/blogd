@@ -2,6 +2,7 @@
 #define BLOGD_H
 
 #include "ae.h"
+#include "sds.h"
 
 #define PAGE_KEY_PREFIX "blogd::page"
 #define PAGE_ERROR_KEY_PREFIX "blogd::page::error"
@@ -33,8 +34,8 @@ void initContents(char *content_dir);
 void processHttpRequestFromClient(aeEventLoop *el, int fd, void *privdata, int mask);
 
 /* Response */
-char *buildHttpHeaders(char *content, char *contentType, unsigned int code, unsigned int isChunk);
-void responseHttp(void *cl, char *content, char *contentType, unsigned int code, unsigned int isChunk);
+sds *buildHttpHeaders(char *contentType, unsigned int contentLength, unsigned int code);
+void responseHttp(void *cl, char *content, char *contentType, unsigned int code);
 void responseHttpIndex(void *cl, char **matches, int readlen, size_t qblen);
 void responseHttpPage(void *cl, char **matches, int readlen, size_t qblen);
 void responseHttpContent(void *cl, char **matches, int readlen, size_t qblen);

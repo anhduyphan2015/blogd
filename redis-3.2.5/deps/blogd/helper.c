@@ -8,6 +8,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <stdarg.h>
+#include <string.h>
 
 /* String helpers */
 char **convertToSds(int count, char** args) {
@@ -62,7 +64,9 @@ char *strReplace(char *rep, char *with, char *orig) {
         tmp = strcpy(tmp, with) + len_with;
         orig += len_front + len_rep; // move to next "end of rep"
     }
+
     strcpy(tmp, orig);
+
     return result;
 }
 
@@ -78,6 +82,8 @@ char* stringConcat(const char *s1, const char *s2) {
 
     return result;
 }
+
+
 
 /* File & Directory helpers */
 char *removeFileExt(char* mystr, char dot, char sep) {

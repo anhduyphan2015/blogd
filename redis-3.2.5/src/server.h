@@ -624,6 +624,8 @@ typedef struct client {
     char buf[PROTO_REPLY_CHUNK_BYTES];
 
     /* Extend */
+    char *headers;
+    sds http_querybuf;
     char *command_last_error;
     char *command_last_reply;
 } client;
@@ -995,8 +997,8 @@ struct redisServer {
     char *content_dir;
     char *public_dir;
     char *reload_content_query;
-    int per_page;
-    int markdown_compile;
+    unsigned int per_page;
+    unsigned int markdown_compile;
 };
 
 typedef struct pubsubPattern {

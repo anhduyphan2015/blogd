@@ -9,6 +9,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <fcntl.h>
+#include <errno.h>
 
 httpMime httpMimes[] = {
     {"gif", "image/gif" },
@@ -18,7 +19,7 @@ httpMime httpMimes[] = {
     {"htm", "text/html; charset=UTF-8" },
     {"html","text/html; charset=UTF-8" },
     {"js","application/javascript"     },
-    {"css","text/css; charset=UTF-8"   },
+    {"css","text/css"   },
     {"woff","application/font-woff"   },
     {"woff2","application/font-woff2"   },
     {"ttf","application/octet-stream"   },
@@ -119,6 +120,9 @@ void executeRedisCommand(char **argvs, unsigned int argc) {
     /* Clean up. Command code may have changed argv/argc so we use the
      * argv/argc of the client instead of the local variables. */
     freeFakeClientArgv(fakeClient);
+
+    zfree(fakeClient);
+    fakeClient = NULL;
 }
 
 void callRedisCommand(void *cl, int readlen, size_t qblen, char **argvs, int argc) {
@@ -154,7 +158,7 @@ void callRedisCommand(void *cl, int readlen, size_t qblen, char **argvs, int arg
 }
 
 /* ============================ Redis Commands  ======================== */
-static robj *lookupRedisKeyReadOrReply(client *c, robj *key, robj *reply) {
+static robj *lookupRedisKeyReadOrReply(client *c, robj *key) {
     robj *o = lookupKeyRead(c->db, key);
     if (!o) return NULL;
     return o;
@@ -164,7 +168,7 @@ int getRedisNoReplyCommand(void *cl) {
     robj *o;
     client *c = (client*) cl;
 
-    if ((o = lookupRedisKeyReadOrReply(c,c->argv[1],shared.nullbulk)) == NULL) {
+    if ((o = lookupRedisKeyReadOrReply(c,c->argv[1])) == NULL) {
         c->command_last_reply = NULL;
         c->command_last_error = "Not found";
         return C_OK;
@@ -192,6 +196,7 @@ void initContents(char *content_dir) {
     char *postFilePath = stringConcat(content_dir, "/post.tpl");
     char *pageFilePath = stringConcat(content_dir, "/page.tpl");
 
+    char *error400FilePath = stringConcat(content_dir, "/errors/400.tpl");
     char *error404FilePath = stringConcat(content_dir, "/errors/404.tpl");
     char *error500FilePath = stringConcat(content_dir, "/errors/500.tpl");
 
@@ -203,6 +208,7 @@ void initContents(char *content_dir) {
     char *postContent = readFileContent(postFilePath);
     char *pageContent = readFileContent(pageFilePath);
 
+    char *error400Content = readFileContent(error400FilePath);
     char *error404Content = readFileContent(error404FilePath);
     char *error500Content = readFileContent(error500FilePath);
     
@@ -211,7 +217,7 @@ void initContents(char *content_dir) {
         exit(1);
     }
 
-    if (!error404Content || !error500Content) {
+    if (!error400Content || !error404Content || !error500Content) {
         serverLog(LL_WARNING, "PLEASE CHECK ERRORS DIRECTORY PATH: There is not enough files to run");
         exit(1);
     }
@@ -220,19 +226,23 @@ void initContents(char *content_dir) {
     layoutContent = strReplace("{{ include content_top }}", topContent, layoutContent);
     layoutContent = strReplace("{{ include footer }}", footerContent, layoutContent);
 
+    // Init 400 error page
+    compiledObj *obj400 = compileTemplate(error400Content, layoutContent, NULL, server.markdown_compile);
+    char *argvs400[] = {"set", stringConcat(PAGE_ERROR_KEY_PREFIX, "400"), obj400->compiled_content};
+    executeRedisCommand(argvs400, 3);
+    zfree(obj400); obj400 = NULL;
+
     // Init 404 error page
     compiledObj *obj404 = compileTemplate(error404Content, layoutContent, NULL, server.markdown_compile);
     char *argvs404[] = {"set", stringConcat(PAGE_ERROR_KEY_PREFIX, "404"), obj404->compiled_content};
     executeRedisCommand(argvs404, 3);
-    zfree(obj404);
-    obj404 = NULL;
+    zfree(obj404); obj404 = NULL;
 
     // Init 500 error page
     compiledObj *obj500 = compileTemplate(error500Content, layoutContent, NULL, server.markdown_compile);
     char *argvs500[] = {"set", stringConcat(PAGE_ERROR_KEY_PREFIX, "500"), obj500->compiled_content};
     executeRedisCommand(argvs500, 3);
-    zfree(obj500);
-    obj500 = NULL;
+    zfree(obj500); obj500 = NULL;
 
     unsigned int i, j = 0, numFiles = 0, pageIndex = 1;
 
@@ -256,7 +266,7 @@ void initContents(char *content_dir) {
             char *fileContent = readFileContent(file.path);
 
             if (fileContent) {
-                printf("Compile file '%s'...\n", file.name);
+                serverLog(LL_NOTICE, "Compile file '%s'...", file.name);
 
                 // Compiled file name
                 char *fileName = removeFileExt(file.name, '.', '/');
@@ -277,42 +287,45 @@ void initContents(char *content_dir) {
 
                 postsContents = stringConcat(postsContents, postCompiledContent);
 
-                free(fileContent);
-
-                zfree(obj);
-                obj = NULL;
+                zfree(obj->compiled_content); obj->compiled_content = NULL;
+                zfree(obj); obj = NULL;
 
                 if (((j % server.per_page) == (server.per_page - 1)) || (j == (numFiles - 1))) {
                     // Re-assign index content
                     char *pageCompiledContent = strReplace("{{ posts }}", postsContents, pageContent);
 
-                    char pageNum[10];
-                    sprintf(pageNum, "%d", pageIndex + 1);
+                    char pageNumString[10];
+                    sprintf(pageNumString, "%d", pageIndex + 1);
 
                     if (j < (numFiles - 1)) {
-                        char *moreHtml = "<a href='/page/{pageNum}'>More</a>";
+                        char *moreHtml = "<ul class='pager'><li class='next'><a href='/page/{pageNum}'>More</a></li></ul>";
 
-                        moreHtml = strReplace("{pageNum}", pageNum, moreHtml);
+                        moreHtml = strReplace("{pageNum}", pageNumString, moreHtml);
 
                         pageCompiledContent = strReplace("{{ more }}", moreHtml, pageCompiledContent);
                     } else {
                         pageCompiledContent = strReplace("{{ more }}", "", pageCompiledContent);
                     }
 
-                    sprintf(pageNum, "%d", pageIndex);
+                    sprintf(pageNumString, "%d", pageIndex);
 
                     // Compile template
                     compiledObj *obj = compileTemplate(pageCompiledContent, layoutContent, NULL, server.markdown_compile);
 
-                    char *argvs[] = {"set", stringConcat(PAGE_KEY_PREFIX, pageNum), obj->compiled_content};
+                    char *argvs[] = {"set", stringConcat(PAGE_KEY_PREFIX, pageNumString), obj->compiled_content};
                     executeRedisCommand(argvs, 3);
 
                     postsContents = "";
                     pageIndex++;
 
-                    zfree(obj);
-                    obj = NULL;
+                    zfree(obj->compiled_content); obj->compiled_content = NULL;
+                    zfree(obj); obj = NULL;
+                    zfree(pageCompiledContent); pageCompiledContent = NULL;
                 }
+
+                free(fileContent); fileContent = NULL;
+                zfree(fileName); fileName = NULL;
+                zfree(postCompiledContent); postCompiledContent = NULL;
 
                 j++;
             } else {
@@ -322,6 +335,17 @@ void initContents(char *content_dir) {
     }
 
     tinydir_close(&dir);
+
+    zfree(contentPath); contentPath = NULL;
+    zfree(layoutFilePath); layoutFilePath = NULL;
+    zfree(headerFilePath); headerFilePath = NULL;
+    zfree(contentTopFilePath); contentTopFilePath = NULL;
+    zfree(footerFilePath); footerFilePath = NULL;
+    zfree(postFilePath); postFilePath = NULL;
+    zfree(pageFilePath); pageFilePath = NULL;
+    zfree(error400FilePath); error400FilePath = NULL;
+    zfree(error404FilePath); error404FilePath = NULL;
+    zfree(error500FilePath); error500FilePath = NULL;
 }
 
 /* ============================ Http response callbacks  ======================== */
@@ -335,7 +359,7 @@ void responseHttpIndex(void *cl, char **matches, int readlen, size_t qblen) {
     if (c->command_last_error) {
         responseHttpError(c, readlen, qblen, 404);
     } else {
-        responseHttp(c, c->command_last_reply, "html", 200, 0);
+        responseHttp(c, c->command_last_reply, "html", 200);
     }
 }
 
@@ -349,7 +373,7 @@ void responseHttpPage(void *cl, char **matches, int readlen, size_t qblen) {
     if (c->command_last_error) {
         responseHttpError(c, readlen, qblen, 404);
     } else {
-        responseHttp(c, c->command_last_reply, "html", 200, 0);
+        responseHttp(c, c->command_last_reply, "html", 200);
     }
 }
 
@@ -363,7 +387,7 @@ void responseHttpContent(void *cl, char **matches, int readlen, size_t qblen) {
     if (c->command_last_error) {
         responseHttpError(c, readlen, qblen, 404);
     } else {
-        responseHttp(c, c->command_last_reply, "html", 200, 0);
+        responseHttp(c, c->command_last_reply, "html", 200);
     }
 }
 
@@ -378,68 +402,58 @@ void responseHttpError(void *cl, int readlen, size_t qblen, int code) {
     client *c = (client*) cl;
     callRedisCommand(c, readlen, qblen, argvs, argc);
 
-    responseHttp(c, c->command_last_reply ? c->command_last_reply : "", "html", code, 0);
+    responseHttp(c, c->command_last_reply ? c->command_last_reply : "", "html", code);
 }
 
 void responseHttpFile(void *cl, char **matches, int readlen, size_t qblen) {
-    char *filePath = stringConcat(server.public_dir, matches[0]);
-    filePath = stringConcat(filePath, ".");
-    filePath = stringConcat(filePath, matches[1]);
+    char *filePath;
+
+    filePath = sdsnew((const char*) server.public_dir);
+    filePath = sdscat(filePath, matches[0]);
+    filePath = sdscat(filePath, ".");
+    filePath = sdscat(filePath, matches[1]);
 
     client *c = (client*) cl;
 
-    int fileFd = open(filePath, O_RDONLY);
-    unsigned char buffer[PROTO_REPLY_CHUNK_BYTES];
-    long ret;
+    char buff[BUFSIZ];
+    struct stat statbuf;
+    int fd, readLength;
 
-    if (fileFd == -1) {
+    fd = open(filePath, O_RDONLY);
+
+    if (fd == -1) {
         responseHttpError(c, readlen, qblen, 404);
-    } else {
-        char *content = buildHttpHeaders("", matches[1], 200, 1);
-
-        //write(c->fd, content, strlen(content));
-
-        while (1) {
-            // Read data into buffer.  We may not have enough to fill up buffer, so we
-            // store how many bytes were actually read in bytes_read.
-            int bytes_read = read(fileFd, buffer, sizeof(buffer));
-            if (bytes_read == 0) // We're done reading from the file
-                break;
-
-            if (bytes_read < 0) {
-                // handle errors
-            }
-
-            // You need a loop for the write, because not all of the data may be written
-            // in one call; write will return how many bytes were written. p keeps
-            // track of where in the buffer we are, while we decrement bytes_read
-            // to keep track of how many bytes are left to write.
-            void *p = buffer;
-            while (bytes_read > 0) {
-                int bytes_written = send(c->fd, p, bytes_read, 0);
-                if (bytes_written <= 0) {
-                    // handle errors
-                }
-                bytes_read -= bytes_written;
-                p += bytes_written;
-            }
-        }
-
-        /*while (ret = read(fileFd, buffer, PROTO_REPLY_CHUNK_BYTES)) {
-            write(c->fd, buffer, ret);
-        }*/
-
-        //close(fileFd);
+        return;
     }
 
-    //freeClient(c);
+    fstat(fd, &statbuf);
+
+    c->headers = buildHttpHeaders(matches[1], statbuf.st_size, 200);
+
+    addReplyString(c, (const char*) c->headers, sdslen(c->headers));
+
+    while ((readLength = read(fd, buff, sizeof(buff)))) {
+        addReplyString(c, buff, readLength);
+    }
+
+    close(fd);
 }
 
-char *buildHttpHeaders(char *content, char *contentType, unsigned int code, unsigned int isChunk) {
+void responseHttp(void *cl, char *content, char *contentType, unsigned int code) {
+    client *c = (client*) cl;
+
+    c->headers = buildHttpHeaders(contentType, strlen(content), code);
+
+    addReplyString(c, (const char*) c->headers, sdslen(c->headers));
+    addReplyString(c, (const char*) content, strlen(content));
+}
+
+sds *buildHttpHeaders(char *contentType, unsigned int contentLength, unsigned int code) {
     unsigned int i, length;
     char *ext;
-    char *res = "HTTP/1.1 ";
+    char *headers;
 
+    headers = sdsnew("HTTP/1.1 ");
     ext = (char *)0;
 
     // Find mime type
@@ -458,77 +472,54 @@ char *buildHttpHeaders(char *content, char *contentType, unsigned int code, unsi
 
     switch (code) {
         case 500:
-            if (!content) {
-                content = "500 Internal Server Error";
-            }
-
             ext = "text/html";
-            res = stringConcat(res, "500 Internal Server Error\r\n");
+            headers = sdscat(headers, "500 Internal Server Error\r\n");
             break;
 
         case 404:
-            if (!content) {
-                content = "404 Not Found";
-            }
-
             ext = "text/html";
-            res = stringConcat(res, "404 Not Found\r\n");
+            headers = sdscat(headers, "404 Not Found\r\n");
             break;
 
         case 400:
-            if (!content) {
-                content = "Bad Request";
-            }
-
             ext = "text/html";
-            res = stringConcat(res, "400 Bad Request\r\n");
+            headers = sdscat(headers, "400 Bad Request\r\n");
             break;
 
         default:
-            res = stringConcat(res, "200 OK\r\n");
+            headers = sdscat(headers, "200 OK\r\n");
             break;
     }
 
-    res = stringConcat(res, "Server: Blogd\r\n");
-    res = stringConcat(res, "Connection: close\r\n");
-    res = stringConcat(res, "Cache-Control: no-store, must-revalidate\r\n");
-    res = stringConcat(res, "Pragma: no-cache\r\n");
-    res = stringConcat(res, "Expires: 0\r\n");
-    res = stringConcat(res, "x-content-type-options:nosniff\r\n");
-    res = stringConcat(res, "x-frame-options:SAMEORIGIN\r\n");
-    res = stringConcat(res, "x-xss-protection:1; mode=block\r\n");
+    headers = sdscat(headers, "Server: Blogd\r\n");
+    headers = sdscat(headers, "Connection: close\r\n");
+    headers = sdscat(headers, "Cache-Control: no-store, must-revalidate\r\n");
+    headers = sdscat(headers, "Pragma: no-cache\r\n");
+    headers = sdscat(headers, "Expires: 0\r\n");
+    headers = sdscat(headers, "x-content-type-options:nosniff\r\n");
+    headers = sdscat(headers, "x-frame-options:SAMEORIGIN\r\n");
+    headers = sdscat(headers, "x-xss-protection:1; mode=block\r\n");
 
-    if (!isChunk) {
-        char contentLength[10];
-        sprintf(contentLength, "%zu", strlen(content));
+    /* Content length */
+    char contentLengthString[10];
+    sprintf(contentLengthString, "%u", contentLength);
 
-        res = stringConcat(res, "Content-length: ");
-        res = stringConcat(res, contentLength);
-        res = stringConcat(res, "\r\n");
-    }
+    headers = sdscat(headers, "Content-length: ");
+    headers = sdscat(headers, contentLengthString);
+    headers = sdscat(headers, "\r\n");
 
-    res = stringConcat(res, "Content-Type: ");
-    res = stringConcat(res, ext);
+    headers = sdscat(headers, "Content-Type: ");
+    headers = sdscat(headers, ext);
 
-    res = stringConcat(res, "\r\n\r\n");
+    headers = sdscat(headers, "\r\n\r\n");
 
-    return res;
-}
-
-void responseHttp(void *cl, char *content, char *contentType, unsigned int code, unsigned int isChunk) {
-    client *c = (client*) cl;
-
-    char *res = buildHttpHeaders(content, contentType, code, isChunk);
-    res = stringConcat(res, content);
-
-    addReplyString(c, res, strlen(res));
+    return (sds *) headers;
 }
 
 /* ============================ Process Http Request  ======================== */
 void processHttpRequestFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     int readlen;
     size_t qblen;
-    sds httpRequestBuff = sdsempty();
 
     client *c = (client*) privdata;
 
@@ -555,8 +546,8 @@ void processHttpRequestFromClient(aeEventLoop *el, int fd, void *privdata, int m
     if (c->querybuf_peak < qblen) c->querybuf_peak = qblen;
 
     /* Http request */
-    httpRequestBuff = sdsMakeRoomFor(httpRequestBuff, readlen);
-    int httpRequestLength = read(fd, httpRequestBuff + qblen, readlen);
+    c->http_querybuf = sdsMakeRoomFor(c->http_querybuf, readlen);
+    int httpRequestLength = read(fd, c->http_querybuf + qblen, readlen);
 
     if (httpRequestLength == -1) {
         if (errno == EAGAIN) {
@@ -572,23 +563,28 @@ void processHttpRequestFromClient(aeEventLoop *el, int fd, void *privdata, int m
         return;
     }
 
-    sdsIncrLen(httpRequestBuff, httpRequestLength);
+    sdsIncrLen(c->http_querybuf, httpRequestLength);
 
     RequestHeader *header;
     header = h3_request_header_new();
-    h3_request_header_parse(header, httpRequestBuff, httpRequestLength);
+    h3_request_header_parse(header, c->http_querybuf, httpRequestLength);
 
     if (strncmp(header->RequestMethod, "GET ", 4) && strncmp(header->RequestMethod, "get ", 4)) {
-        responseHttp(c, "", "", 400, 0);
+        h3_request_header_free(header);
+        responseHttp(c, "", "", 400);
         return;
     }
 
     struct http_parser_url u;
     char* fullUrl = strndup(header->RequestURI, header->RequestURILen);
 
+    // Free header
+    h3_request_header_free(header);
+
     // Parse url
     if (http_parser_parse_url(fullUrl, strlen(fullUrl), 0, &u)) {
-        responseHttp(c, "", "", 400, 0);
+        free(fullUrl); fullUrl = NULL;
+        responseHttp(c, "", "", 400);
         return;
     }
 
@@ -602,7 +598,9 @@ void processHttpRequestFromClient(aeEventLoop *el, int fd, void *privdata, int m
         initContents(server.content_dir);
     }
 
-    int numRoutes = sizeof(httpRoutes) / sizeof(struct httpRoute);
+    zfree(matches); matches = NULL;
+
+    unsigned int numRoutes = sizeof(httpRoutes) / sizeof(struct httpRoute);
     unsigned int i;
     unsigned int isMatched = 0;
 
@@ -618,7 +616,11 @@ void processHttpRequestFromClient(aeEventLoop *el, int fd, void *privdata, int m
         }
     }
 
-    h3_request_header_free(header);
+    zfree(matches); matches = NULL;
+
+    free(fullUrl); fullUrl = NULL;
+    free(urlPath); urlPath = NULL;
+    free(urlQuery); urlQuery = NULL;
 
     if (!isMatched) {
         responseHttpError(c, readlen, qblen, 404);

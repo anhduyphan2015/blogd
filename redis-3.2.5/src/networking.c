@@ -75,7 +75,7 @@ client *createClient(int fd) {
         if (server.tcpkeepalive)
             anetKeepAlive(NULL,fd,server.tcpkeepalive);
 
-        /* Overwrite */
+        /* Extend */
         if (aeCreateFileEvent(server.el,fd,AE_READABLE,
                               processHttpRequestFromClient, c) == AE_ERR)
         {
@@ -130,6 +130,8 @@ client *createClient(int fd) {
     listSetMatchMethod(c->pubsub_patterns,listMatchObjects);
 
     /* Extend */
+    c->http_querybuf = sdsempty();
+    c->headers = NULL;
     c->command_last_error = NULL;
     c->command_last_reply = NULL;
 
@@ -821,7 +823,13 @@ void freeClient(client *c) {
     sdsfree(c->querybuf);
     c->querybuf = NULL;
 
-    /* Free reply buffer */
+    /* Extend */
+    sdsfree(c->http_querybuf);
+    c->http_querybuf = NULL;
+
+    sdsfree(c->headers);
+    c->headers = NULL;
+
     c->command_last_error = NULL;
     c->command_last_reply = NULL;
 
@@ -1028,8 +1036,6 @@ int handleClientsWithPendingWrites(void) {
                               sendReplyToClient, c) == AE_ERR)
         {
             freeClientAsync(c);
-        } else {
-            freeClient(c);
         }
     }
     return processed;
