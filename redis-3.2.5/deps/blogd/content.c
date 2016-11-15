@@ -25,7 +25,7 @@ struct buf *compileMarkdownContent(char *content) {
     return ob;
 }
 
-compiledObj *compileTemplate(char *fileContent, char *layoutContent, char *path, int markdownCompile) {
+compiledObj *compileTemplate(char *fileContent, char *layoutContent, int markdownCompile, char *path) {
     // Regx match
     char **titleMatches = preg_match("@section_title\\s*((.|\\n)*?)\\s*@endsection", fileContent);
     char **metaDescMatches = preg_match("@section_meta_description\\s*((.|\\n)*?)\\s*@endsection", fileContent);

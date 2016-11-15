@@ -83,8 +83,6 @@ char* stringConcat(const char *s1, const char *s2) {
     return result;
 }
 
-
-
 /* File & Directory helpers */
 char *removeFileExt(char* mystr, char dot, char sep) {
     char *retstr, *lastdot, *lastsep;
@@ -124,33 +122,19 @@ char *removeFileExt(char* mystr, char dot, char sep) {
 }
 
 char *readFileContent(char *path) {
-    char *content = NULL;
+    char *content = sdsempty();
+    char buf[1024 + 1];
+
     FILE * fp = fopen(path, "r");
 
     if (fp != NULL) {
-        /* Go to the end of the file. */
-        if (fseek(fp, 0L, SEEK_END) == 0) {
-            /* Get the size of the file. */
-            long bufsize = ftell(fp);
-            if (bufsize == -1) { /* Error */ }
-
-            /* Allocate our buffer to that size. */
-            content = malloc(sizeof(char) * (bufsize + 1));
-
-            /* Go back to the start of the file. */
-            if (fseek(fp, 0L, SEEK_SET) == 0) { /* Error */ }
-
-            /* Read the entire file into memory. */
-            size_t newLen = fread(content, sizeof(char), bufsize, fp);
-            if (newLen != 0) {
-                content[++newLen] = '\0';
-            }
-        }
+        while(fgets(buf, 1024 + 1,fp) != NULL)
+            content = sdscat(content, buf);
 
         fclose(fp);
     }
 
-    return content;
+    return (char *) content;
 }
 
 void createDir(char *path, mode_t mode) {

@@ -1,7 +1,7 @@
 What is Blogd?
 -------------
-Blogd is **a custom Redis version for building Flat-File Blog** which focus about performance, fast development to help busy developers to build a blogging system.
-Blogd is developed for **Golr Engineering Blogging System** 
+Blogd is **a custom Redis version for building Flat-File Blog** which focus about performance, fast development to help busy developers to build a blog.
+Blogd was first developed for **Golr Engineering Blog** 
 
 Demo
 -------------
@@ -9,7 +9,7 @@ Demo
 
 Features
 -------------
-* Redis with built-in simple HTTP server.
+* Simple HTTP server inside Redis.
 * Support Mardown language to write posts with minimum effort required.
 * Auto creating pagination pages.
 * Can handle thousand of requests per seconds with Redis event-loop.
@@ -50,14 +50,14 @@ $ cd redis-3.2.5
 $ ./src/redis-server redis.conf
 </pre>
 
-Addition configuration
--------------
-Change default configuration in "redis-3.2.5/redis.conf" file
+Blogd configurations
+--------------------
+Some new configurations added in "redis-3.2.5/redis.conf" file
 <pre>
 content-dir "../contents" # The path of content dir
 public-dir "../public" # The path of public dir
 per-page 10 # Limit posts per page
-reload-content-query "secret-reload" # HTTP query param for reloading content (ex: http://blogd.local/?secret-reload)
+reload-content-query "secret-reload" # HTTP query param for reloading content (ex: http://blogd.local/?secret-reload=1)
 markdown-compile 0 # Using or not mardown language in templates
 </pre>
 

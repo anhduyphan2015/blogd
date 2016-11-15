@@ -227,19 +227,19 @@ void initContents(char *content_dir) {
     layoutContent = strReplace("{{ include footer }}", footerContent, layoutContent);
 
     // Init 400 error page
-    compiledObj *obj400 = compileTemplate(error400Content, layoutContent, NULL, server.markdown_compile);
+    compiledObj *obj400 = compileTemplate(error400Content, layoutContent, server.markdown_compile, NULL);
     char *argvs400[] = {"set", stringConcat(PAGE_ERROR_KEY_PREFIX, "400"), obj400->compiled_content};
     executeRedisCommand(argvs400, 3);
     zfree(obj400); obj400 = NULL;
 
     // Init 404 error page
-    compiledObj *obj404 = compileTemplate(error404Content, layoutContent, NULL, server.markdown_compile);
+    compiledObj *obj404 = compileTemplate(error404Content, layoutContent, server.markdown_compile, NULL);
     char *argvs404[] = {"set", stringConcat(PAGE_ERROR_KEY_PREFIX, "404"), obj404->compiled_content};
     executeRedisCommand(argvs404, 3);
     zfree(obj404); obj404 = NULL;
 
     // Init 500 error page
-    compiledObj *obj500 = compileTemplate(error500Content, layoutContent, NULL, server.markdown_compile);
+    compiledObj *obj500 = compileTemplate(error500Content, layoutContent, server.markdown_compile, NULL);
     char *argvs500[] = {"set", stringConcat(PAGE_ERROR_KEY_PREFIX, "500"), obj500->compiled_content};
     executeRedisCommand(argvs500, 3);
     zfree(obj500); obj500 = NULL;
@@ -272,7 +272,7 @@ void initContents(char *content_dir) {
                 char *fileName = removeFileExt(file.name, '.', '/');
 
                 // Compile template
-                compiledObj *obj = compileTemplate(fileContent, layoutContent, NULL, server.markdown_compile);
+                compiledObj *obj = compileTemplate(fileContent, layoutContent, server.markdown_compile, NULL);
 
                 // Save content
                 char *argvs[] = {"set", stringConcat(POST_KEY_PREFIX, fileName), obj->compiled_content};
@@ -310,11 +310,12 @@ void initContents(char *content_dir) {
                     sprintf(pageNumString, "%d", pageIndex);
 
                     // Compile template
-                    compiledObj *obj = compileTemplate(pageCompiledContent, layoutContent, NULL, server.markdown_compile);
+                    compiledObj *obj = compileTemplate(pageCompiledContent, layoutContent, server.markdown_compile, NULL);
 
                     char *argvs[] = {"set", stringConcat(PAGE_KEY_PREFIX, pageNumString), obj->compiled_content};
                     executeRedisCommand(argvs, 3);
 
+                    zfree(postsContents);
                     postsContents = "";
                     pageIndex++;
 
@@ -323,7 +324,7 @@ void initContents(char *content_dir) {
                     zfree(pageCompiledContent); pageCompiledContent = NULL;
                 }
 
-                free(fileContent); fileContent = NULL;
+                sdsfree(fileContent); fileContent = NULL;
                 zfree(fileName); fileName = NULL;
                 zfree(postCompiledContent); postCompiledContent = NULL;
 
@@ -346,6 +347,16 @@ void initContents(char *content_dir) {
     zfree(error400FilePath); error400FilePath = NULL;
     zfree(error404FilePath); error404FilePath = NULL;
     zfree(error500FilePath); error500FilePath = NULL;
+    zfree(layoutContent); layoutContent = NULL;
+
+    sdsfree(headerContent); headerContent = NULL;
+    sdsfree(topContent); topContent = NULL;
+    sdsfree(footerContent); footerContent = NULL;
+    sdsfree(postContent); postContent = NULL;
+    sdsfree(pageContent); pageContent = NULL;
+    sdsfree(error400Content); error400Content = NULL;
+    sdsfree(error404Content); error404Content = NULL;
+    sdsfree(error500Content); error500Content = NULL;
 }
 
 /* ============================ Http response callbacks  ======================== */
