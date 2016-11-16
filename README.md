@@ -10,7 +10,7 @@ Demo
 Features
 -------------
 * Simple HTTP server inside Redis.
-* Support Mardown language to write posts with minimum effort required.
+* Support Markdown language to write posts with minimum effort required.
 * Auto creating pagination pages.
 * Can handle thousand of requests per seconds with Redis event-loop.
 
