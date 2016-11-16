@@ -1,7 +1,7 @@
 What is Blogd?
 -------------
 Blogd is **a custom Redis version for building Flat-File Blog** which focus about performance, fast development to help busy developers to build a blog.
-Blogd was first developed for **Golr Engineering Blog** 
+Blogd was first developed for **Golr Engineering Blog**.
 
 Demo
 -------------
@@ -20,8 +20,15 @@ Source code layout
 * public: contains static files (css,js,images).
 * redis-3.2.5: contains the Redis custom version, written in C.
 
-Dependencies
--------------
+How Blogd works
+---------------
+* Blogd will read files in "contents" dir when it started and compile it.
+* All compiled content will be saved into Redis by key => value (file_name => compiled_content) and keep it in memory.
+* When the client requests a resource (Ex: /2016-11-08-failure-is-not-an-option).
+The value (compiled content) of "2016-11-08-failure-is-not-an-option" key will be returned back to the client.
+
+Install dependencies
+--------------------
 <pre>
 $ sudo apt-get install libpcre3-dev # For Debian/Ubuntu
 $ sudo yum install pcre-devel # For RHEL/CentOS
@@ -60,6 +67,15 @@ per-page 10 # Limit posts per page
 reload-content-query "secret-reload" # HTTP query param for reloading content (ex: http://blogd.local/?secret-reload=1)
 markdown-compile 0 # Using or not mardown language in templates
 </pre>
+
+Contents directory
+------------------
+* errors: contains templates for error pages.
+* posts: contains posts templates (naming convention: Y-m-d-post-title).
+* layout.tpl: master template for all pages.
+* page.tpl: template for home page and pagination pages (when your blog has many posts more than 'per-page' config).
+* content_top.tpl, header.tpl, footer.tpl: template for specify area in layout.tpl. 
+* post.tpl: template of a posts displayed on home page and pagination pages. (will replace for {{ posts }} in "page.tpl").
 
 Notes
 -------------
