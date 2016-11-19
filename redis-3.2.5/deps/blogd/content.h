@@ -13,6 +13,6 @@ typedef struct compiledObj {
 } compiledObj;
 
 struct buf *compileMarkdownContent(char *content);
-compiledObj *compileTemplate(char *fileContent, char *layoutContent, int markdownCompile, char *path);
+compiledObj *compileTemplate(char *fileContent, char *layoutContent, int markdownCompile, unsigned int useMarkdown);
 
 #endif

@@ -25,7 +25,7 @@ struct buf *compileMarkdownContent(char *content) {
     return ob;
 }
 
-compiledObj *compileTemplate(char *fileContent, char *layoutContent, int markdownCompile, char *path) {
+compiledObj *compileTemplate(char *fileContent, char *layoutContent, int markdownCompile, unsigned int useMarkdown) {
     // Regx match
     char **titleMatches = preg_match("@section_title\\s*((.|\\n)*?)\\s*@endsection", fileContent);
     char **metaDescMatches = preg_match("@section_meta_description\\s*((.|\\n)*?)\\s*@endsection", fileContent);
@@ -46,7 +46,7 @@ compiledObj *compileTemplate(char *fileContent, char *layoutContent, int markdow
     obj->published_at = publishedAtMatches ? publishedAtMatches[0] : "";
 
     if (contentMatches) {
-        if (markdownCompile > 0) {
+        if ((markdownCompile > 0) && (useMarkdown > 0)) {
             ob = compileMarkdownContent(contentMatches[0]);
             content = (char *) ob->data;
         } else {
@@ -60,15 +60,8 @@ compiledObj *compileTemplate(char *fileContent, char *layoutContent, int markdow
     obj->compiled_content = strReplace("{{ meta_description }}", obj->meta_desc, obj->compiled_content);
     obj->compiled_content = strReplace("{{ content }}", content, obj->compiled_content);
 
-    if (contentMatches && (markdownCompile > 0)) {
+    if (contentMatches && (markdownCompile > 0) && (useMarkdown > 0)) {
         bufrelease(ob);
-    }
-
-    // Write complied content
-    if (path) {
-        FILE *fp = fopen(path, "w+");
-        fputs(obj->compiled_content, fp);
-        fclose(fp);
     }
 
     return obj;
